@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# nunca versione seus snippets/senhas
+*.local.yml
+match/
+backups/

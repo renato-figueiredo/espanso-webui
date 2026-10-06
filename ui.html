@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -103,6 +103,7 @@ pre.code{background:var(--code);border:1px solid var(--border);border-radius:8px
   <button class="btn sm" id="btnNewFile"></button>
   <span class="pill" id="status"><span class="dot"></span><span id="statusTxt"></span></span>
   <span class="spacer"></span>
+  <select id="langSel" title="Language / Idioma"><option value="en">EN</option><option value="pt">PT</option></select>
   <button class="btn" id="btnImport"></button>
   <button class="btn" id="btnYaml"></button>
   <button class="btn" id="btnBackups"></button>
@@ -129,11 +130,16 @@ pre.code{background:var(--code);border:1px solid var(--border);border-radius:8px
 <script>
 "use strict";
 const TOKEN = "__TOKEN__";
-const LANG = (navigator.language || "en").toLowerCase().startsWith("pt") ? "pt" : "en";
+const LANG = (() => {
+  let v = new URLSearchParams(location.search).get("lang");
+  try { v = v || localStorage.getItem("ewui.lang"); } catch {}
+  v = v || navigator.language || "en";
+  return v.toLowerCase().startsWith("pt") ? "pt" : "en";
+})();
 const I18N = {
   pt: {
     newSnippet:"+ Novo snippet", newFile:"+ Arquivo", import:"Importar Beeftext", yaml:"Ver YAML", backups:"Backups", quit:"Encerrar",
-    snippets:"Snippets", globalVars:"Variáveis", search:"Buscar gatilho, texto ou descrição…",
+    snippets:"Snippets", globalVars:"Variáveis", search:"Buscar snippets…",
     espansoOk:"espanso ativo", espansoOff:"espanso parado", espansoNone:"espanso não encontrado",
     count:n=>`${n} snippet${n===1?"":"s"}`, countVars:n=>`${n} variáve${n===1?"l":"is"}`,
     emptyT:"Nenhum snippet selecionado", emptyD:"Escolha um item à esquerda ou crie um novo.",
@@ -159,11 +165,11 @@ const I18N = {
     newFileName:"Nome do novo arquivo (ex.: trabalho)", create:"Criar", cancel:"Cancelar", close:"Fechar",
     unsaved:"Há alterações não salvas. Descartar?", conflict:"O arquivo mudou no disco. Recarregue antes de salvar.",
     quitConfirm:"Encerrar o servidor local?", bye:"Servidor encerrado. Pode fechar esta aba.",
-    reload:"Recarregar do disco", error:"Erro", dir:"Pasta:"
+    reload:"Recarregar do disco", error:"Erro", dir:"Pasta:", adv:"avançado", emptyShort:"(vazio)", noFiles:"Nenhum arquivo .yml em"
   },
   en: {
     newSnippet:"+ New snippet", newFile:"+ File", import:"Import Beeftext", yaml:"View YAML", backups:"Backups", quit:"Quit",
-    snippets:"Snippets", globalVars:"Variables", search:"Search trigger, text or description…",
+    snippets:"Snippets", globalVars:"Variables", search:"Search snippets…",
     espansoOk:"espanso running", espansoOff:"espanso stopped", espansoNone:"espanso not found",
     count:n=>`${n} snippet${n===1?"":"s"}`, countVars:n=>`${n} variable${n===1?"":"s"}`,
     emptyT:"No snippet selected", emptyD:"Pick one on the left or create a new one.",
@@ -189,7 +195,7 @@ const I18N = {
     newFileName:"New file name (e.g. work)", create:"Create", cancel:"Cancel", close:"Close",
     unsaved:"You have unsaved changes. Discard?", conflict:"The file changed on disk. Reload before saving.",
     quitConfirm:"Stop the local server?", bye:"Server stopped. You can close this tab.",
-    reload:"Reload from disk", error:"Error", dir:"Folder:"
+    reload:"Reload from disk", error:"Error", dir:"Folder:", adv:"advanced", emptyShort:"(empty)", noFiles:"No .yml file in"
   }
 };
 const t = (k, ...a) => { const v = I18N[LANG][k]; return typeof v === "function" ? v(...a) : (v ?? k); };
@@ -232,6 +238,8 @@ function allTriggers(except) {
 
 // ---------- carregamento ----------
 async function init() {
+  $("langSel").value = LANG;
+  $("langSel").addEventListener("change", e => { try { localStorage.setItem("ewui.lang", e.target.value); } catch {} const u = new URL(location.href); u.searchParams.delete("lang"); if (!S.dirty || confirm(t("unsaved"))) { S.dirty = false; location.href = u; } else e.target.value = LANG; });
   document.documentElement.lang = LANG === "pt" ? "pt-BR" : "en";
   $("btnNewFile").textContent = t("newFile"); $("btnImport").textContent = t("import"); $("btnNew").textContent = t("newSnippet");
   $("btnYaml").textContent = t("yaml"); $("btnBackups").textContent = t("backups");
@@ -292,8 +300,8 @@ function renderList() {
     if (!matchesFilter(m)) return; shown++;
     const adv = !("replace" in m) || "vars" in m || "regex" in m || "form" in m;
     list.append(el("div", { class: "item" + (S.sel === i ? " sel" : ""), onclick: () => { S.sel = i; renderList(); renderEditor(); } },
-      el("div", { class: "trg" }, (trigOf(m).split("\n")[0]) || "(vazio)", m.triggers && m.triggers.length > 1 ? el("span", { class: "badge", text: "+" + (m.triggers.length - 1) }) : null,
-        adv ? el("span", { class: "badge", text: "avançado" }) : null),
+      el("div", { class: "trg" }, (trigOf(m).split("\n")[0]) || t("emptyShort"), m.triggers && m.triggers.length > 1 ? el("span", { class: "badge", text: "+" + (m.triggers.length - 1) }) : null,
+        adv ? el("span", { class: "badge", text: t("adv") }) : null),
       el("div", { class: "sub", text: m.label || (typeof m.replace === "string" ? m.replace.replace(/\s+/g, " ") : "") })));
   });
   $("count").textContent = t("count", shown) + (shown !== S.data.matches.length ? ` / ${S.data.matches.length}` : "");
@@ -308,7 +316,7 @@ function insertAtCursor(ta, text, selectInner) {
 
 function renderEditor() {
   const ed = $("editor"); ed.replaceChildren();
-  if (!S.data) { ed.append(el("div", { class: "empty" }, el("b", { text: "Nenhum arquivo .yml em " + (S.info ? S.info.dir : "") }), t("newFile"))); return; }
+  if (!S.data) { ed.append(el("div", { class: "empty" }, el("b", { text: t("noFiles") + " " + (S.info ? S.info.dir : "") }), t("newFile"))); return; }
   if (S.tab === "vars") return renderVarsEditor(ed);
   const m = S.data.matches[S.sel];
   if (!m) {
@@ -358,7 +366,7 @@ function renderEditor() {
     card.append(el("label", { class: "f" }, el("span", { text: t("replace") }), tool, ta));
   }
 
-  // avançado
+  // advanced
   const det = el("details", {}, el("summary", { text: t("advanced") }));
   const mode = el("select", {}, el("option", { value: "", text: t("modeAuto") }), el("option", { value: "keys", text: t("modeKeys") }), el("option", { value: "clipboard", text: t("modeClip") }));
   mode.addEventListener("change", () => { if (mode.value) m.force_mode = mode.value; else delete m.force_mode; reorder(m); markDirty(); });

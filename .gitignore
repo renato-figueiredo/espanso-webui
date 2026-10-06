@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
-# nunca versione seus snippets/senhas
+# never commit your own snippets/passwords
 *.local.yml
 match/
 backups/

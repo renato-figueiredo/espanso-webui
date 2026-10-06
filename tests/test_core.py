@@ -1,4 +1,4 @@
-"""Testes do núcleo (emissor YAML + importador Beeftext). Rode: python3 -m unittest -v"""
+"""Core tests (YAML emitter + Beeftext importer). Run: python3 -m unittest -v"""
 import importlib.machinery
 import importlib.util
 import json
@@ -21,7 +21,7 @@ class DumpYaml(unittest.TestCase):
                           "vars": [{"name": "x", "type": "echo", "params": {"echo": text}}]}]}
         self.assertEqual(yaml.safe_load(ewui.dump_yaml(d)), d, repr(text))
 
-    def test_casos_chatos(self):
+    def test_tricky_cases(self):
         for c in ["", "a", "-nome", "true", "12", "  x", "x ", "a: b", "# c", "{{v}}", "$|$", "é à",
                   "a\nb", "a\nb\n", "a\n\nb", "\ta\nb", "a\nb\n\n", "\nb", "x\r\ny", "'q'", '"d"',
                   "- x", "2024-01-01", "0x1F", "1_000", "null", "~", "a\n", "\n"]:
@@ -33,7 +33,7 @@ class DumpYaml(unittest.TestCase):
         for _ in range(1500):
             self.roundtrip("".join(rnd.choice(alphabet) for _ in range(rnd.randint(0, 12))))
 
-    def test_multilinha_usa_bloco(self):
+    def test_multiline_uses_block(self):
         out = ewui.dump_yaml({"matches": [{"trigger": "-x", "replace": "a\nb"}]})
         self.assertIn("replace: |-", out)
 
@@ -46,7 +46,7 @@ class Beeftext(unittest.TestCase):
         {"keyword": "-clip", "snippet": "[#{clipboard}]"},
     ], "groups": []}
 
-    def test_conversao(self):
+    def test_conversion(self):
         m, warns = ewui.import_beeftext(json.dumps(self.SAMPLE))
         by = {x["trigger"]: x for x in m}
         self.assertEqual(by["-login"]["replace"], "user\t{{combo}}$|$")
@@ -57,7 +57,7 @@ class Beeftext(unittest.TestCase):
         self.assertEqual(by["-clip"]["vars"][0]["type"], "clipboard")
         self.assertEqual(len(warns), 2)
 
-    def test_json_invalido(self):
+    def test_invalid_json(self):
         with self.assertRaises(ValueError):
             ewui.import_beeftext('{"foo": 1}')
 

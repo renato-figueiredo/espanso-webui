@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""espanso-webui: interface web local para gerenciar os snippets do espanso.
+"""espanso-webui: a local web UI to manage your espanso snippets.
 
-Sobe um servidor em 127.0.0.1, abre o navegador e encerra com Ctrl+C
-(ou sozinho, após um tempo sem uso). Nada fica rodando em segundo plano.
+Starts a server on 127.0.0.1, opens your browser and exits on Ctrl+C
+(or by itself after a period of inactivity). Nothing keeps running in the
+background.
 
-Requer: Python 3.8+ e PyYAML (python3-yaml / pip install pyyaml).
+Requires: Python 3.8+ and PyYAML (python3-yaml / pip install pyyaml).
 """
 import argparse
 import datetime
@@ -26,8 +27,8 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:  # pragma: no cover
-    sys.exit("PyYAML não encontrado. Instale com: pip install --user pyyaml "
-             "(ou o pacote python3-yaml da sua distro).")
+    sys.exit("PyYAML not found. Install it with: pip install --user pyyaml "
+             "(or your distro's python3-yaml package).")
 
 VERSION = "1.0.0"
 HERE = Path(__file__).resolve().parent
@@ -37,16 +38,16 @@ BACKUP_KEEP = 30
 
 
 # --------------------------------------------------------------------------
-# YAML: leitura via PyYAML, escrita com emissor próprio (legível, multilinha
-# em blocos "|" em vez de "\\n" escapado). Todo texto gerado é conferido por
-# releitura antes de gravar (ver Store.save).
+# YAML: read with PyYAML, written with our own emitter (readable; multiline
+# text as "|" blocks instead of escaped "\\n"). Every generated text is
+# verified by re-reading it before it is written (see Store.save).
 # --------------------------------------------------------------------------
 _PLAIN_OK = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ./-]*$")
 _RESERVED = {"true", "false", "yes", "no", "null", "on", "off", "y", "n"}
 
 
 def _scalar(s):
-    """Texto em linha única; só vai sem aspas quando é inequivocamente string."""
+    """Single-line text; unquoted only when it is unambiguously a string."""
     if _PLAIN_OK.fullmatch(s) and s.lower() not in _RESERVED and not s.endswith(" "):
         return s
     return json.dumps(s, ensure_ascii=False)  # aspas duplas, escapes válidos
@@ -65,7 +66,7 @@ def _inline(v):
 
 
 def _can_block(s):
-    """Dá para usar bloco literal (|) sem perder fidelidade?"""
+    """Can a literal block (|) be used without losing fidelity?"""
     if "\n" not in s.rstrip("\n") or s.endswith("\n\n") or "\r" in s:
         return False
     if any(ord(c) < 32 and c not in "\n\t" for c in s):
@@ -120,7 +121,7 @@ def dump_yaml(data):
 
 
 # --------------------------------------------------------------------------
-# Importação do Beeftext
+# Beeftext import
 # --------------------------------------------------------------------------
 _QT_TO_STRFTIME = [
     ("yyyy", "%Y"), ("yy", "%y"), ("MMMM", "%B"), ("MMM", "%b"), ("MM", "%m"),
@@ -163,7 +164,7 @@ def convert_snippet(snippet, warnings, kw):
             if k in ("enter", "return"):
                 state["keys"] = True
                 return "\n"
-            warnings.append(f"[{kw}] tecla #{{key:{arg}}} sem equivalente: removida")
+            warnings.append(f"[{kw}] key #{{key:{arg}}} has no equivalent: removed")
             return ""
         if low == "combo":
             v = _unique_var(vars_, "combo")
@@ -181,19 +182,18 @@ def convert_snippet(snippet, warnings, kw):
             return "{{%s}}" % v
         if low == "input":
             state["inputs"] += 1
-            warnings.append(f"[{kw}] #{{input}} vira apenas o cursor "
-                            "(formulários exigem o 'modulo' do espanso)")
+            warnings.append(f"[{kw}] #{{input}} becomes just the cursor "
+                            "(forms require espanso's 'modulo' feature)")
             return "$|$" if state["inputs"] == 1 else ""
         if low == "envvar":
             v = _unique_var(vars_, "env")
             vars_.append({"name": v, "type": "shell",
                           "params": {"cmd": f"printf %s \"${arg}\""}})
             return "{{%s}}" % v
-        warnings.append(f"[{kw}] #{{{tok}}} sem equivalente: mantido como texto")
+        warnings.append(f"[{kw}] #{{{tok}}} has no equivalent: kept as text")
         return m.group(0)
 
     text = _TOKEN.sub(repl, snippet)
-    # "{{" literal no texto precisa de escape? o espanso só interpreta {{var}}
     return text, vars_, state["keys"]
 
 
@@ -201,17 +201,17 @@ def import_beeftext(raw):
     data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
     combos = data.get("combos")
     if combos is None:
-        raise ValueError("JSON não parece um export do Beeftext (sem 'combos').")
+        raise ValueError("JSON does not look like a Beeftext export (no 'combos').")
     warnings, matches = [], []
 
     def walk(group_combos):
         for c in group_combos:
             kw, snippet = c.get("keyword", ""), c.get("snippet", "")
             if not kw:
-                warnings.append("combo sem keyword ignorado")
+                warnings.append("combo without keyword skipped")
                 continue
             if not c.get("enabled", True):
-                warnings.append(f"[{kw}] estava desabilitado no Beeftext (importado ativo)")
+                warnings.append(f"[{kw}] was disabled in Beeftext (imported as enabled)")
             text, vars_, keys = convert_snippet(snippet, warnings, kw)
             m = {"trigger": kw}
             label = (c.get("description") or c.get("name") or "").strip()
@@ -252,7 +252,7 @@ class Store:
     def _path(self, name):
         p = (self.dir / name).resolve()
         if self.dir.resolve() not in p.parents or p.suffix not in (".yml", ".yaml"):
-            raise ValueError("arquivo inválido")
+            raise ValueError("invalid file")
         return p
 
     def load(self, name):
@@ -272,17 +272,17 @@ class Store:
         p = self._path(name)
         with self.lock:
             if p.exists() and expected_mtime and p.stat().st_mtime_ns != int(expected_mtime):
-                raise FileExistsError("O arquivo mudou no disco desde que você o abriu. "
-                                      "Recarregue antes de salvar.")
+                raise FileExistsError("The file changed on disk since you opened it. "
+                                      "Reload before saving.")
             doc = dict(payload.get("extra") or {})
             doc["global_vars"] = payload.get("global_vars") or []
             doc["matches"] = payload.get("matches") or []
             if not doc["global_vars"]:
                 doc.pop("global_vars")
             text = dump_yaml(doc)
-            # valida antes de gravar: precisa reler igual
+            # validate before writing: it must read back identical
             if yaml.safe_load(text).get("matches", []) != doc["matches"]:
-                raise ValueError("falha de verificação: YAML gerado difere dos dados")
+                raise ValueError("verification failed: generated YAML differs from the data")
             if p.exists():
                 self._backup(p)
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -302,9 +302,9 @@ class Store:
     def restore(self, backup, name):
         src = BACKUP_DIR / Path(backup).name
         if not src.is_file():
-            raise ValueError("backup não encontrado")
+            raise ValueError("backup not found")
         text = src.read_text(encoding="utf-8")
-        yaml.safe_load(text)  # só restaura YAML válido
+        yaml.safe_load(text)  # only restore valid YAML
         p = self._path(name)
         with self.lock:
             if p.exists():
@@ -340,7 +340,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    # -- segurança: só localhost + token de sessão (anti CSRF / DNS rebinding)
+    # -- security: localhost only + per-session token (anti CSRF / DNS rebinding)
     def _host_ok(self):
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
         return host in ("127.0.0.1", "localhost")
@@ -363,10 +363,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _gate(self, need_token):
         if not self._host_ok():
-            self._send(403, {"error": "host inválido"})
+            self._send(403, {"error": "invalid host"})
             return False
         if need_token and self.headers.get("X-Token") != self.server.token:
-            self._send(403, {"error": "token inválido"})
+            self._send(403, {"error": "invalid token"})
             return False
         return True
 
@@ -377,7 +377,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/":
             if q.get("t", [""])[0] != self.server.token:
-                return self._send(403, "Abra pelo link impresso no terminal.",
+                return self._send(403, "Open the link printed in the terminal.",
                                   "text/plain; charset=utf-8")
             html = (HERE / "ui.html").read_text(encoding="utf-8")
             return self._send(200, html.replace("__TOKEN__", self.server.token),
@@ -402,7 +402,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   "text/plain; charset=utf-8")
         except Exception as e:
             return self._send(400, {"error": str(e)})
-        self._send(404, {"error": "não encontrado"})
+        self._send(404, {"error": "not found"})
 
     def do_POST(self):
         if not self._gate(True):
@@ -430,7 +430,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not name.endswith((".yml", ".yaml")):
                     name += ".yml"
                 if (st.dir / name).exists():
-                    raise ValueError("já existe um arquivo com esse nome")
+                    raise ValueError("a file with that name already exists")
                 st.save(name, {"matches": []}, None)
                 return self._send(200, {"name": name})
             if path == "/api/restore":
@@ -444,7 +444,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(409, {"error": str(e)})
         except Exception as e:
             return self._send(400, {"error": str(e)})
-        self._send(404, {"error": "não encontrado"})
+        self._send(404, {"error": "not found"})
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -464,7 +464,7 @@ class Server(http.server.ThreadingHTTPServer):
         while True:
             time.sleep(15)
             if self.idle_timeout and time.monotonic() - self.last > self.idle_timeout * 60:
-                print(f"\nSem uso por {self.idle_timeout} min: encerrando.")
+                print(f"\nIdle for {self.idle_timeout} min: shutting down.")
                 self.shutdown()
                 return
 
@@ -474,7 +474,7 @@ def default_match_dir():
         r = subprocess.run(["espanso", "path", "config"], capture_output=True,
                            text=True, timeout=5)
         cfg = r.stdout.strip().splitlines()
-        # "espanso path config" -> diretório de configuração
+        # "espanso path config" -> configuration directory
         if r.returncode == 0 and cfg and Path(cfg[0]).is_dir():
             return Path(cfg[0]) / "match"
     except Exception:
@@ -488,15 +488,15 @@ def free_port(preferred):
         with socket.socket() as s:
             if s.connect_ex(("127.0.0.1", p)) != 0:
                 return p
-    raise SystemExit("nenhuma porta livre encontrada")
+    raise SystemExit("no free port found")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--match-dir", help="pasta match do espanso (padrão: detecta)")
+    ap.add_argument("--match-dir", help="espanso match folder (default: auto-detect)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--idle", type=int, default=15, metavar="MIN",
-                    help="encerra após N minutos sem uso (0 = nunca; padrão 15)")
+                    help="exit after N idle minutes (0 = never; default 15)")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--version", action="version", version=VERSION)
     a = ap.parse_args()
@@ -504,8 +504,8 @@ def main():
     match_dir = Path(a.match_dir).expanduser() if a.match_dir else default_match_dir()
     srv = Server(("127.0.0.1", free_port(a.port)), Store(match_dir), a.idle)
     url = f"http://127.0.0.1:{srv.server_address[1]}/?t={srv.token}"
-    print(f"espanso-webui {VERSION}\n  pasta: {match_dir}\n  abra:  {url}\n"
-          f"  (Ctrl+C para encerrar; sem uso por {a.idle} min também encerra)",
+    print(f"espanso-webui {VERSION}\n  folder: {match_dir}\n  open:   {url}\n"
+          f"  (Ctrl+C to quit; it also exits after {a.idle} idle min)",
           flush=True)
     if a.idle:
         threading.Thread(target=srv.watch_idle, daemon=True).start()
@@ -517,7 +517,7 @@ def main():
         pass
     finally:
         srv.server_close()
-        print("encerrado.")
+        print("stopped.")
 
 
 if __name__ == "__main__":
